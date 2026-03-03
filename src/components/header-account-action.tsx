@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { UserRound } from "lucide-react";
-import { useSyncExternalStore } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 
 type UserProfile = {
   name: string;
@@ -10,18 +10,13 @@ type UserProfile = {
   phone?: string;
 };
 
-const readStoredUser = (): UserProfile | null => {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  const saved = localStorage.getItem("qfome-user");
-  if (!saved) {
+const parseStoredUser = (value: string | null): UserProfile | null => {
+  if (!value) {
     return null;
   }
 
   try {
-    const parsed = JSON.parse(saved) as UserProfile;
+    const parsed = JSON.parse(value) as UserProfile;
     if (!parsed?.name || !parsed?.email) {
       return null;
     }
@@ -31,8 +26,16 @@ const readStoredUser = (): UserProfile | null => {
   }
 };
 
+const readStoredUserSnapshot = (): string | null => {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  return localStorage.getItem("qfome-user");
+};
+
 export function HeaderAccountAction() {
-  const user = useSyncExternalStore(
+  const userSnapshot = useSyncExternalStore(
     (onStoreChange) => {
       if (typeof window === "undefined") {
         return () => {};
@@ -46,9 +49,10 @@ export function HeaderAccountAction() {
         window.removeEventListener("qfome-user-changed", handler);
       };
     },
-    () => readStoredUser(),
+    () => readStoredUserSnapshot(),
     () => null,
   );
+  const user = useMemo(() => parseStoredUser(userSnapshot), [userSnapshot]);
 
   if (user) {
     const firstName = user.name.split(" ")[0] ?? "Cliente";
