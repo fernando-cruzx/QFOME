@@ -9,9 +9,22 @@ type UserProfile = {
   name: string;
   email: string;
   phone?: string;
+  passwordHash?: string;
 };
 
 const normalizeEmail = (value: string) => value.trim().toLowerCase();
+
+const hashPassword = async (password: string) => {
+  if (typeof window === "undefined" || !window.crypto?.subtle) {
+    throw new Error("Hash de senha indisponivel neste ambiente.");
+  }
+
+  const encoded = new TextEncoder().encode(password);
+  const hashBuffer = await window.crypto.subtle.digest("SHA-256", encoded);
+  return Array.from(new Uint8Array(hashBuffer))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+};
 
 const readStoredUser = (): UserProfile | null => {
   if (typeof window === "undefined") {
@@ -47,7 +60,7 @@ export default function EntrarPage() {
   const [signupPhone, setSignupPhone] = useState("");
   const [signupPassword, setSignupPassword] = useState("");
 
-  const handleLogin = (event: FormEvent<HTMLFormElement>) => {
+  const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     const storedUser = readStoredUser();
@@ -67,13 +80,29 @@ export default function EntrarPage() {
       return;
     }
 
-    localStorage.setItem("qfome-user", JSON.stringify(storedUser));
-    window.dispatchEvent(new Event("qfome-user-changed"));
-    setFeedback("Login realizado. Redirecionando para sua area de cliente...");
-    router.push("/cliente");
+    if (!storedUser.passwordHash) {
+      setFeedback("Conta antiga detectada. Crie uma nova conta para ativar login com senha segura.");
+      setTab("signup");
+      return;
+    }
+
+    try {
+      const incomingHash = await hashPassword(loginPassword.trim());
+      if (incomingHash !== storedUser.passwordHash) {
+        setFeedback("Credenciais invalidas. Verifique e-mail e senha.");
+        return;
+      }
+
+      localStorage.setItem("qfome-user", JSON.stringify(storedUser));
+      window.dispatchEvent(new Event("qfome-user-changed"));
+      setFeedback("Login realizado. Redirecionando para sua area de cliente...");
+      router.push("/cliente");
+    } catch {
+      setFeedback("Nao foi possivel validar sua senha neste navegador.");
+    }
   };
 
-  const handleSignup = (event: FormEvent<HTMLFormElement>) => {
+  const handleSignup = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     if (!signupName.trim() || !signupEmail.trim() || !signupPassword.trim()) {
@@ -86,16 +115,23 @@ export default function EntrarPage() {
       return;
     }
 
-    const newUser: UserProfile = {
-      name: signupName.trim(),
-      email: normalizeEmail(signupEmail),
-      phone: signupPhone.trim(),
-    };
+    try {
+      const passwordHash = await hashPassword(signupPassword.trim());
 
-    localStorage.setItem("qfome-user", JSON.stringify(newUser));
-    window.dispatchEvent(new Event("qfome-user-changed"));
-    setFeedback("Conta criada com sucesso. Redirecionando para sua area de cliente...");
-    router.push("/cliente");
+      const newUser: UserProfile = {
+        name: signupName.trim(),
+        email: normalizeEmail(signupEmail),
+        phone: signupPhone.trim(),
+        passwordHash,
+      };
+
+      localStorage.setItem("qfome-user", JSON.stringify(newUser));
+      window.dispatchEvent(new Event("qfome-user-changed"));
+      setFeedback("Conta criada com sucesso. Redirecionando para sua area de cliente...");
+      router.push("/cliente");
+    } catch {
+      setFeedback("Nao foi possivel criar sua senha neste navegador.");
+    }
   };
 
   return (
